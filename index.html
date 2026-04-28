@@ -139,19 +139,41 @@ const w = (n) => Math.ceil(n / 4);
 const UA_ROUTE_THRESHOLD_PAX = 180;
 const UA_ROUTE_THRESHOLD_CARGO = 12;
 
-function expandSnapshot(raw) {
+function expandSnapshot(raw, prevRaw) {
+  // Build a quick lookup of previous current values:
+  // prevByIcao[icao][kind][sector_idx] = previous_current
+  const prevByIcao = {};
+  if (prevRaw) {
+    prevRaw.airports.forEach(a => {
+      prevByIcao[a.icao] = {};
+      ['pax', 'cargo'].forEach(kind => {
+        const block = a[kind];
+        if (block && block.sectors) {
+          prevByIcao[a.icao][kind] = block.sectors.map(s => s.c);
+        }
+      });
+    });
+  }
+
   const airports = raw.airports.map(a => {
     const out = { ...a };
     ['pax', 'cargo'].forEach(kind => {
       const block = a[kind];
       if (!block || !block.sectors) return;
+      const prev = prevByIcao[a.icao]?.[kind];
       const expanded = block.sectors.map((s, i) => {
         const def = Math.max(0, s.n - s.c);
+        const prevC = prev ? prev[i] : null;
+        const delta = (prevC != null) ? (s.c - prevC) : null;
         return {
           sector: i, label: SECTOR_LABELS[i], short: SECTOR_SHORT[i],
           current: s.c, normal: s.n, bias: s.b,
           deficit: def,
           current_w: w(s.c), normal_w: w(s.n), deficit_w: w(def),
+          prev_current: prevC,
+          prev_current_w: prevC != null ? w(prevC) : null,
+          delta: delta,
+          delta_w: delta != null ? Math.round(delta / 4) : null,
         };
       });
       out[kind] = { sectors: expanded };
@@ -174,7 +196,26 @@ function expandSnapshot(raw) {
       to_name: ta?.name || r.to,     to_ua: ta?.is_ua || false,
     };
   });
-  return { airports, routes, byIcao, generated_at: raw.generated_at };
+  // Compute hours-elapsed from prev for the UI label
+  let hoursElapsed = null;
+  if (prevRaw && raw.generated_at && prevRaw.generated_at) {
+    // Format from python: "%Y-%m-%d %H:%M UTC"
+    const parseUtc = (s) => {
+      const [date, time] = s.replace(' UTC', '').split(' ');
+      return Date.parse(date + 'T' + time + ':00Z');
+    };
+    const t1 = parseUtc(raw.generated_at);
+    const t0 = parseUtc(prevRaw.generated_at);
+    if (!isNaN(t1) && !isNaN(t0)) {
+      hoursElapsed = (t1 - t0) / 1000 / 3600;
+    }
+  }
+  return {
+    airports, routes, byIcao,
+    generated_at: raw.generated_at,
+    prev_generated_at: prevRaw?.generated_at,
+    hours_elapsed: hoursElapsed,
+  };
 }
 
 // ---------------- Map + Sidebar ----------------
@@ -228,6 +269,13 @@ function RadarChart({ airport, kind }) {
           { label: 'Норма', data: sectors.map(s => s.normal_w),
             backgroundColor: 'rgba(148,163,184,0.08)', borderColor: 'rgba(148,163,184,0.6)',
             borderWidth: 1, borderDash: [4, 4], pointRadius: 0 },
+          ...(sectors[0].prev_current_w != null ? [{
+            label: 'Було',
+            data: sectors.map(s => s.prev_current_w),
+            backgroundColor: 'rgba(56,189,248,0.05)',
+            borderColor: 'rgba(56,189,248,0.5)',
+            borderWidth: 1.5, borderDash: [2, 3], pointRadius: 0,
+          }] : []),
           { label: 'Зараз', data: sectors.map(s => s.current_w),
             backgroundColor: 'rgba(249,115,22,0.25)', borderColor: 'rgba(249,115,22,0.9)',
             borderWidth: 2, pointBackgroundColor: 'rgba(249,115,22,1)',
@@ -263,7 +311,14 @@ function Sidebar({ data, selectedIcao, onSelect }) {
     return (
       <div id="side">
         <h1>📊 Ukraine NS · Newsky Demand</h1>
-        <div className="meta">Знімок: {data.generated_at}</div>
+        <div className="meta">
+          Знімок: {data.generated_at}
+          {data.prev_generated_at && (
+            <span style={{ marginLeft: 6, color: '#64748b' }}>
+              (попередній: {data.prev_generated_at})
+            </span>
+          )}
+        </div>
         <div className="empty-state">Клікни на аеропорт на карті<br/>щоб побачити деталі</div>
       </div>
     );
@@ -285,11 +340,49 @@ function Sidebar({ data, selectedIcao, onSelect }) {
       </div>
       <div className="meta" style={{ textAlign: 'center', fontSize: 11, marginBottom: 12 }}>
         🟧 поточний · ⚪ норма
+        {data.hours_elapsed != null && ' · 🔵 було'}
       </div>
+      <DeltaTable airport={a} kind={kind} hoursElapsed={data.hours_elapsed} />
       {a.is_ua ? <UaRoutes airport={a} kind={kind} routes={data.routes} />
               : <ForeignRoutes airport={a} kind={kind} routes={data.routes} />}
     </div>
   );
+}
+
+function DeltaTable({ airport, kind, hoursElapsed }) {
+  const sectors = airport[kind]?.sectors;
+  if (!sectors || sectors[0].delta_w == null) return null;
+  // Show only sectors where delta != 0, sorted by abs(delta) desc
+  const changed = sectors
+    .map((s, i) => ({ ...s, _i: i }))
+    .filter(s => s.delta_w !== 0)
+    .sort((a, b) => Math.abs(b.delta_w) - Math.abs(a.delta_w))
+    .slice(0, 8);
+  if (!changed.length) return null;
+  const fmtElapsed = (h) => {
+    if (h == null) return '';
+    if (h < 1) return `${Math.round(h * 60)}хв`;
+    if (h < 48) return `${h.toFixed(1)}год`;
+    return `${(h / 24).toFixed(1)}дн`;
+  };
+  const unit = kind === 'pax' ? '' : 'т';
+  return <>
+    <h3>Δ за {fmtElapsed(hoursElapsed)} (топ-8)</h3>
+    {changed.map(s => {
+      const sign = s.delta_w > 0 ? '+' : '';
+      const color = s.delta_w > 0 ? '#4ade80' : '#f87171';
+      return (
+        <div key={s._i} className="route" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>{s.label}</span>
+          <span style={{ color, fontWeight: 600 }}>
+            {sign}{s.delta_w}{unit} <span style={{ color: '#64748b', fontWeight: 400, fontSize: 11 }}>
+              ({s.prev_current_w}→{s.current_w})
+            </span>
+          </span>
+        </div>
+      );
+    })}
+  </>;
 }
 
 function UaRoutes({ airport, kind, routes }) {
@@ -543,19 +636,26 @@ function MatrixTab({ data }) {
 // ---------------- App ----------------
 function App() {
   const [raw, setRaw] = useState(null);
+  const [prevRaw, setPrevRaw] = useState(null);
   const [error, setError] = useState(null);
   const [selectedIcao, setSelectedIcao] = useState(null);
   const [activeTab, setActiveTab] = useState('backhaul');
   const mapRef = useRef(null);
 
   useEffect(() => {
-    fetch('snapshot.json?ts=' + Date.now())
+    const ts = Date.now();
+    fetch('snapshot.json?ts=' + ts)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setRaw)
       .catch(e => setError(e.message));
+    // Previous snapshot is optional — silently ignore 404
+    fetch('snapshot_prev.json?ts=' + ts)
+      .then(r => r.ok ? r.json() : null)
+      .then(setPrevRaw)
+      .catch(() => setPrevRaw(null));
   }, []);
 
-  const data = useMemo(() => raw ? expandSnapshot(raw) : null, [raw]);
+  const data = useMemo(() => raw ? expandSnapshot(raw, prevRaw) : null, [raw, prevRaw]);
 
   if (error) return <div className="loading err">❌ {error}<br/>
     <small>snapshot.json не знайдено? Запусти newsky_export.py локально й закоміть.</small></div>;
