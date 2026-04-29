@@ -96,7 +96,7 @@
   tbody tr:hover { background: #1e293b; }
   tbody tr.clickable { cursor: pointer; }
   tbody tr.clickable:hover { background: #273548; }
-  tbody tr.ua td:first-child { color: #fca5a5; font-weight: 600; }
+  tbody tr.ua td:first-child { color: #fbbf24; font-weight: 600; }
   .icao { font-family: 'Courier New', monospace; }
   .icao-link { cursor: pointer; }
   .icao-link:hover { text-decoration: underline; color: #fb923c; }
@@ -108,7 +108,7 @@
   }
   .pill-pax { background: #1e3a8a; color: #bfdbfe; }
   .pill-cargo { background: #78350f; color: #fed7aa; }
-  .pill-ua { background: #7f1d1d; color: #fecaca; }
+  .pill-ua { background: #005bbb; color: #fde68a; }
   .mx { text-align: right; font-family: 'Courier New', monospace; }
   .mx-hot1 { background: rgba(249, 115, 22, 0.2); }
   .mx-hot2 { background: rgba(249, 115, 22, 0.4); color: #0b1220; font-weight: 600; }
@@ -239,10 +239,11 @@ function MapView({ data, selected, onSelect, mapRef }) {
     markersRef.current = [];
     data.airports.forEach(a => {
       const size = a.is_ua ? 8 : 5;
-      const color = a.is_ua ? '#ef4444' : '#3b82f6';
+      const color = a.is_ua ? '#fbbf24' : '#3b82f6';
+      const border = a.is_ua ? '#005bbb' : '#0b1220';
       const marker = L.circleMarker([a.lat, a.lon], {
-        radius: size, fillColor: color, color: '#0b1220',
-        weight: 1, fillOpacity: 0.9,
+        radius: size, fillColor: color, color: border,
+        weight: a.is_ua ? 1.5 : 1, fillOpacity: 0.95,
       }).addTo(map);
       marker.bindTooltip(`<b>${a.icao}</b> ${a.name}`, { direction: 'top' });
       marker.on('click', () => onSelect(a.icao));
@@ -676,7 +677,7 @@ function App() {
       <Sidebar data={data} selectedIcao={selectedIcao} onSelect={handleSelect} />
     </div>
     <div className="legend">
-      <div><span className="dot" style={{ background: '#ef4444' }}></span> UA</div>
+      <div><span className="dot" style={{ background: '#fbbf24', border: '1.5px solid #005bbb' }}></span> UA</div>
       <div><span className="dot" style={{ background: '#3b82f6' }}></span> Іноземні</div>
     </div>
     <div id="bottom">
