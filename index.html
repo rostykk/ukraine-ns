@@ -100,6 +100,9 @@
   .icao { font-family: 'Courier New', monospace; }
   .icao-link { cursor: pointer; }
   .icao-link:hover { text-decoration: underline; color: #fb923c; }
+  .icao-external { color: inherit; text-decoration: none; }
+  .icao-external:hover { text-decoration: underline; color: #fb923c; }
+  .icao-external::after { content: ' ↗'; font-size: 0.7em; opacity: 0.5; }
   .num { text-align: right; }
   .scroll-wrap { max-height: 60vh; overflow: auto; border: 1px solid #1e293b; border-radius: 6px; }
   .pill {
@@ -328,7 +331,15 @@ function Sidebar({ data, selectedIcao, onSelect }) {
   if (!a) return null;
   return (
     <div id="side">
-      <h1>{a.is_ua ? '🇺🇦' : '🌍'} {a.icao}</h1>
+      <h1>
+        {a.is_ua ? '🇺🇦' : '🌍'}{' '}
+        <a href={`https://newsky.app/airport/${a.icao}`}
+           target="_blank" rel="noopener noreferrer"
+           className="icao-external"
+           title="Відкрити в Newsky">
+          {a.icao}
+        </a>
+      </h1>
       <h2>{a.name}</h2>
       <div className="meta">{a.city}{a.country ? `, ${a.country}` : ''} · {a.lat.toFixed(2)}, {a.lon.toFixed(2)}</div>
       <div className="tabs">
