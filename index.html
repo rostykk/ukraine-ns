@@ -232,7 +232,7 @@ function MapView({ data, selected, onSelect, mapRef }) {
     // CARTO now requires an API key for its tile service. Key is restricted
 // to rostykk.github.io via Referer rules in the CARTO dashboard, so
 // embedding it here is acceptable: it cannot be re-used from another host.
-L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=cb1_59m3_1_29ddefc5c23ff42efb44e55c', {
+L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=YOUR_CARTO_KEY', {
       attribution: '© OpenStreetMap contributors © CARTO', maxZoom: 18,
     }).addTo(map);
     mapRef.current = map;
@@ -584,8 +584,129 @@ function BackhaulTab({ data, onSelect }) {
   return <RouteFanTable data={data} onSelect={onSelect} direction="inbound" />;
 }
 
-function OutboundTab({ data, onSelect }) {
-  return <RouteFanTable data={data} onSelect={onSelect} direction="outbound" />;
+// ---------------- Routes tab (flat like Excel Routes sheet) ----------------
+function RoutesTab({ data, onSelect }) {
+  const [kind, setKind] = useState('all');
+  const [minOut, setMinOut] = useState(50);
+  const [direction, setDirection] = useState('all'); // all | ua-out | ua-in | ua-dom
+  const [search, setSearch] = useState('');
+  const [sortCol, setSortCol] = useState('out_w');
+  const [sortDir, setSortDir] = useState('desc');
+
+  const rows = useMemo(() => data.routes
+    .map(r => ({
+      from: r.from, to: r.to,
+      from_name: r.from_name, to_name: r.to_name,
+      from_ua: r.from_ua, to_ua: r.to_ua,
+      kind: r.kind, sector_label: r.sector_label,
+      distance_nm: r.distance_nm,
+      out_w: r.outbound_current_w,
+      bias: r.outbound_bias,
+      back_w: r.backhaul_current_w,
+      rt: Math.min(r.outbound_current_w, r.backhaul_current_w),
+    }))
+    .filter(r => {
+      if (kind !== 'all' && r.kind !== kind) return false;
+      if (r.out_w < minOut) return false;
+      if (direction === 'ua-out' && !(r.from_ua && !r.to_ua)) return false;
+      if (direction === 'ua-in'  && !(!r.from_ua && r.to_ua)) return false;
+      if (direction === 'ua-dom' && !(r.from_ua && r.to_ua)) return false;
+      if (search) {
+        const hay = `${r.from} ${r.from_name} ${r.to} ${r.to_name}`.toLowerCase();
+        if (!hay.includes(search.toLowerCase())) return false;
+      }
+      return true;
+    }), [data, kind, minOut, direction, search]);
+
+  const sorted = useMemo(() => {
+    const m = sortDir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const va = a[sortCol], vb = b[sortCol];
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * m;
+      return String(va).localeCompare(String(vb)) * m;
+    });
+  }, [rows, sortCol, sortDir]);
+
+  function toggleSort(col) {
+    if (col === sortCol) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('desc'); }
+  }
+  function sortClass(col) {
+    if (col !== sortCol) return '';
+    return sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc';
+  }
+
+  return (
+    <div>
+      <div className="controls">
+        <label>Kind:
+          <span className={`chip ${kind==='all' ? 'active' : ''}`} onClick={() => setKind('all')}>Усі</span>
+          <span className={`chip ${kind==='pax' ? 'active' : ''}`} onClick={() => setKind('pax')}>Pax</span>
+          <span className={`chip ${kind==='cargo' ? 'active' : ''}`} onClick={() => setKind('cargo')}>Cargo</span>
+        </label>
+        <label>Напрямок:
+          <span className={`chip ${direction==='all' ? 'active' : ''}`} onClick={() => setDirection('all')}>Усі</span>
+          <span className={`chip ${direction==='ua-out' ? 'active' : ''}`} onClick={() => setDirection('ua-out')}>З UA</span>
+          <span className={`chip ${direction==='ua-in' ? 'active' : ''}`} onClick={() => setDirection('ua-in')}>В UA</span>
+          <span className={`chip ${direction==='ua-dom' ? 'active' : ''}`} onClick={() => setDirection('ua-dom')}>UA↔UA</span>
+        </label>
+        <label>Min Out/w:
+          <input type="number" value={minOut}
+                 onChange={e => setMinOut(parseInt(e.target.value) || 0)}
+                 style={{ width: 70 }}/>
+        </label>
+        <input type="text" placeholder="🔍 UKBB, HEGN, Київ..."
+               value={search} onChange={e => setSearch(e.target.value)}/>
+        <span style={{ color: '#64748b', fontSize: 11 }}>({sorted.length})</span>
+      </div>
+      <div className="meta" style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>
+        Плоский список усіх маршрутів UA↔куди-завгодно. Клік по заголовку — сортування. Клік по рядку — відкрити аеропорт вильоту.
+      </div>
+      <div className="scroll-wrap">
+        <table>
+          <thead><tr>
+            <th className={sortClass('from')}     onClick={() => toggleSort('from')}>From</th>
+            <th className={sortClass('to')}       onClick={() => toggleSort('to')}>To</th>
+            <th>To Name</th>
+            <th className={sortClass('kind')}     onClick={() => toggleSort('kind')}>Kind</th>
+            <th>Sector</th>
+            <th className={`num ${sortClass('distance_nm')}`} onClick={() => toggleSort('distance_nm')}>nm</th>
+            <th className={`num ${sortClass('out_w')}`}       onClick={() => toggleSort('out_w')}>Out/w</th>
+            <th className={`num ${sortClass('bias')}`}        onClick={() => toggleSort('bias')}>Bias</th>
+            <th className={`num ${sortClass('back_w')}`}      onClick={() => toggleSort('back_w')}>Back/w</th>
+            <th className={`num ${sortClass('rt')}`}          onClick={() => toggleSort('rt')}>Round-trip</th>
+          </tr></thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={i} className="clickable" onClick={(e) => {
+                const link = e.target.closest('.icao-link');
+                onSelect(link ? link.dataset.icao : r.from);
+              }}>
+                <td>
+                  <span className="icao icao-link" data-icao={r.from}>{r.from}</span>
+                  {r.from_ua && <span className="pill pill-ua" style={{marginLeft:4}}>UA</span>}
+                </td>
+                <td>
+                  <span className="icao icao-link" data-icao={r.to}>{r.to}</span>
+                  {r.to_ua && <span className="pill pill-ua" style={{marginLeft:4}}>UA</span>}
+                </td>
+                <td>{r.to_name}</td>
+                <td><span className={`pill pill-${r.kind}`}>{r.kind}</span></td>
+                <td>{r.sector_label}</td>
+                <td className="num">{r.distance_nm}</td>
+                <td className="num"><b style={{color:'#fb923c'}}>{r.out_w || ''}</b></td>
+                <td className="num">{r.bias ? r.bias.toFixed(2) : ''}</td>
+                <td className="num">{r.back_w || ''}</td>
+                <td className="num">
+                  {r.rt > 0 ? <b style={{color:'#4ade80'}}>{r.rt}</b> : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ---------------- Matrix tab ----------------
@@ -717,13 +838,13 @@ function App() {
       <div className="table-tabs">
         <button className={activeTab === 'backhaul' ? 'active' : ''}
                 onClick={() => setActiveTab('backhaul')}>🎯 Backhaul (до нас)</button>
-        <button className={activeTab === 'outbound' ? 'active' : ''}
-                onClick={() => setActiveTab('outbound')}>🛫 Outbound (від нас)</button>
+        <button className={activeTab === 'routes' ? 'active' : ''}
+                onClick={() => setActiveTab('routes')}>✈️ Routes (усі пари)</button>
         <button className={activeTab === 'matrix' ? 'active' : ''}
                 onClick={() => setActiveTab('matrix')}>📊 Matrix</button>
       </div>
       {activeTab === 'backhaul' && <BackhaulTab data={data} onSelect={handleSelect} />}
-      {activeTab === 'outbound' && <OutboundTab data={data} onSelect={handleSelect} />}
+      {activeTab === 'routes' && <RoutesTab data={data} onSelect={handleSelect} />}
       {activeTab === 'matrix' && <MatrixTab data={data} />}
     </div>
   </>;
