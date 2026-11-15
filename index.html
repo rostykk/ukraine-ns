@@ -589,7 +589,8 @@ function RoutesTab({ data, onSelect }) {
   const [kind, setKind] = useState('all');
   const [minOut, setMinOut] = useState(180);          // default A320-friendly threshold
   const [direction, setDirection] = useState('ua-out'); // default: only UA → foreign
-  const [search, setSearch] = useState('');
+  const [fromSearch, setFromSearch] = useState('');
+  const [toSearch, setToSearch] = useState('');
   const [sortCol, setSortCol] = useState('out_w');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
@@ -613,12 +614,16 @@ function RoutesTab({ data, onSelect }) {
       if (direction === 'ua-out' && !(r.from_ua && !r.to_ua)) return false;
       if (direction === 'ua-in'  && !(!r.from_ua && r.to_ua)) return false;
       if (direction === 'ua-dom' && !(r.from_ua && r.to_ua)) return false;
-      if (search) {
-        const hay = `${r.from} ${r.from_name} ${r.to} ${r.to_name}`.toLowerCase();
-        if (!hay.includes(search.toLowerCase())) return false;
+      if (fromSearch) {
+        const hay = `${r.from} ${r.from_name}`.toLowerCase();
+        if (!hay.includes(fromSearch.toLowerCase())) return false;
+      }
+      if (toSearch) {
+        const hay = `${r.to} ${r.to_name}`.toLowerCase();
+        if (!hay.includes(toSearch.toLowerCase())) return false;
       }
       return true;
-    }), [data, kind, minOut, direction, search]);
+    }), [data, kind, minOut, direction, fromSearch, toSearch]);
 
   const sorted = useMemo(() => {
     const m = sortDir === 'asc' ? 1 : -1;
@@ -630,7 +635,7 @@ function RoutesTab({ data, onSelect }) {
   }, [rows, sortCol, sortDir]);
 
   // Reset to first page whenever filters/sort change
-  useEffect(() => { setPage(0); }, [kind, minOut, direction, search, sortCol, sortDir]);
+  useEffect(() => { setPage(0); }, [kind, minOut, direction, fromSearch, toSearch, sortCol, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const pageRows = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -663,12 +668,22 @@ function RoutesTab({ data, onSelect }) {
                  onChange={e => setMinOut(parseInt(e.target.value) || 0)}
                  style={{ width: 70 }}/>
         </label>
-        <input type="text" placeholder="🔍 UKBB, HEGN, Київ..."
-               value={search} onChange={e => setSearch(e.target.value)}/>
+        <input type="text" placeholder="🛫 From (UKBB, Київ...)"
+               value={fromSearch} onChange={e => setFromSearch(e.target.value)}
+               style={{ minWidth: 160 }}/>
+        <input type="text" placeholder="🛬 To (HEGN, Хургада...)"
+               value={toSearch} onChange={e => setToSearch(e.target.value)}
+               style={{ minWidth: 160 }}/>
+        {(fromSearch || toSearch) && (
+          <button onClick={() => { setFromSearch(''); setToSearch(''); }}
+                  style={{ background: '#334155', color: '#e2e8f0', border: 'none', padding: '4px 10px', borderRadius: 12, fontSize: 11, cursor: 'pointer' }}>
+            ✕ Очистити
+          </button>
+        )}
         <span style={{ color: '#64748b', fontSize: 11 }}>({sorted.length})</span>
       </div>
       <div className="meta" style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>
-        Плоский список маршрутів. Пошук шукає по всіх рядках (ICAO або назва, from або to). Клік по заголовку — сортування. Клік по рядку — sidebar вильоту.
+        From/To — окремі фільтри. Пустий = не фільтрує. Приклад: From=UKBB + To=HEGN → одна пара. Клік по заголовку — сортування. Клік по рядку — sidebar вильоту.
       </div>
       <div className="scroll-wrap">
         <table>
