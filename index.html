@@ -232,7 +232,7 @@ function MapView({ data, selected, onSelect, mapRef }) {
     // CARTO now requires an API key for its tile service. Key is restricted
 // to rostykk.github.io via Referer rules in the CARTO dashboard, so
 // embedding it here is acceptable: it cannot be re-used from another host.
-L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=YOUR_CARTO_KEY', {
+L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=cb1_59m3_1_29ddefc5c23ff42efb44e55c', {
       attribution: '© OpenStreetMap contributors © CARTO', maxZoom: 18,
     }).addTo(map);
     mapRef.current = map;
@@ -587,11 +587,13 @@ function BackhaulTab({ data, onSelect }) {
 // ---------------- Routes tab (flat like Excel Routes sheet) ----------------
 function RoutesTab({ data, onSelect }) {
   const [kind, setKind] = useState('all');
-  const [minOut, setMinOut] = useState(50);
-  const [direction, setDirection] = useState('all'); // all | ua-out | ua-in | ua-dom
+  const [minOut, setMinOut] = useState(180);          // default A320-friendly threshold
+  const [direction, setDirection] = useState('ua-out'); // default: only UA → foreign
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState('out_w');
   const [sortDir, setSortDir] = useState('desc');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 100;
 
   const rows = useMemo(() => data.routes
     .map(r => ({
@@ -627,6 +629,12 @@ function RoutesTab({ data, onSelect }) {
     });
   }, [rows, sortCol, sortDir]);
 
+  // Reset to first page whenever filters/sort change
+  useEffect(() => { setPage(0); }, [kind, minOut, direction, search, sortCol, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   function toggleSort(col) {
     if (col === sortCol) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('desc'); }
@@ -660,7 +668,7 @@ function RoutesTab({ data, onSelect }) {
         <span style={{ color: '#64748b', fontSize: 11 }}>({sorted.length})</span>
       </div>
       <div className="meta" style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>
-        Плоский список усіх маршрутів UA↔куди-завгодно. Клік по заголовку — сортування. Клік по рядку — відкрити аеропорт вильоту.
+        Плоский список маршрутів. Пошук шукає по всіх рядках (ICAO або назва, from або to). Клік по заголовку — сортування. Клік по рядку — sidebar вильоту.
       </div>
       <div className="scroll-wrap">
         <table>
@@ -677,7 +685,7 @@ function RoutesTab({ data, onSelect }) {
             <th className={`num ${sortClass('rt')}`}          onClick={() => toggleSort('rt')}>Round-trip</th>
           </tr></thead>
           <tbody>
-            {sorted.map((r, i) => (
+            {pageRows.map((r, i) => (
               <tr key={i} className="clickable" onClick={(e) => {
                 const link = e.target.closest('.icao-link');
                 onSelect(link ? link.dataset.icao : r.from);
@@ -705,6 +713,19 @@ function RoutesTab({ data, onSelect }) {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
+          <button onClick={() => setPage(0)} disabled={page === 0}
+                  style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px', borderRadius: 4, cursor: page === 0 ? 'default' : 'pointer' }}>⏮</button>
+          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                  style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px', borderRadius: 4, cursor: page === 0 ? 'default' : 'pointer' }}>←</button>
+          <span>Стор. <b>{page + 1}</b> з {totalPages} · {sorted.length} рядків, показано {pageRows.length}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1}
+                  style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px', borderRadius: 4, cursor: page === totalPages - 1 ? 'default' : 'pointer' }}>→</button>
+          <button onClick={() => setPage(totalPages - 1)} disabled={page === totalPages - 1}
+                  style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px', borderRadius: 4, cursor: page === totalPages - 1 ? 'default' : 'pointer' }}>⏭</button>
+        </div>
+      )}
     </div>
   );
 }
