@@ -455,7 +455,11 @@ function ForeignRoutes({ airport, kind, routes }) {
 }
 
 // ---------------- Backhaul tab ----------------
-function BackhaulTab({ data, onSelect }) {
+// Shared sidebar-router table: rows of (from, sector) → list of destinations.
+// direction='inbound': from=foreign, to=UA ("backhaul" — хтось хоче до нас)
+// direction='outbound': from=UA, to=foreign ("export" — наш попит кудись летить)
+function RouteFanTable({ data, onSelect, direction }) {
+  const isOutbound = direction === 'outbound';
   const [kind, setKind] = useState('pax');
   const [minVolume, setMinVolume] = useState(180);
   const [search, setSearch] = useState('');
@@ -464,8 +468,13 @@ function BackhaulTab({ data, onSelect }) {
   const rows = useMemo(() => {
     const bySrcKindSec = {};
     data.routes.forEach(r => {
-      if (r.from_ua) return;
-      if (!r.to_ua) return;
+      if (isOutbound) {
+        if (!r.from_ua) return;   // start must be UA
+        if (r.to_ua) return;      // skip UA-to-UA (shown elsewhere)
+      } else {
+        if (r.from_ua) return;    // start must be foreign
+        if (!r.to_ua) return;     // end must be UA
+      }
       const key = `${r.from}|${r.kind}|${r.sector}`;
       if (!bySrcKindSec[key]) {
         bySrcKindSec[key] = {
@@ -525,14 +534,16 @@ function BackhaulTab({ data, onSelect }) {
         <span style={{ color: '#64748b', fontSize: 11 }}>({filtered.length})</span>
       </div>
       <div className="meta" style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>
-        Іноземні аеропорти де сектор у бік UA має попит. Сортуй по «Out/w».
+        {isOutbound
+          ? 'UA аеропорти з попитом у бік іноземних напрямків. Сортуй по «Out/w».'
+          : 'Іноземні аеропорти де сектор у бік UA має попит. Сортуй по «Out/w».'}
       </div>
       <div className="scroll-wrap">
         <table>
           <thead><tr>
             <th>From</th><th>Name</th><th>Sector</th>
             <th className="num">Out/w</th><th className="num">Bias</th>
-            <th>UA цілі</th>
+            <th>{isOutbound ? 'Цілі за кордоном' : 'UA цілі'}</th>
             <th className="num">Best back/w</th>
           </tr></thead>
           <tbody>
@@ -567,6 +578,14 @@ function BackhaulTab({ data, onSelect }) {
       </div>
     </div>
   );
+}
+
+function BackhaulTab({ data, onSelect }) {
+  return <RouteFanTable data={data} onSelect={onSelect} direction="inbound" />;
+}
+
+function OutboundTab({ data, onSelect }) {
+  return <RouteFanTable data={data} onSelect={onSelect} direction="outbound" />;
 }
 
 // ---------------- Matrix tab ----------------
@@ -697,11 +716,14 @@ function App() {
     <div id="bottom">
       <div className="table-tabs">
         <button className={activeTab === 'backhaul' ? 'active' : ''}
-                onClick={() => setActiveTab('backhaul')}>🎯 Backhaul</button>
+                onClick={() => setActiveTab('backhaul')}>🎯 Backhaul (до нас)</button>
+        <button className={activeTab === 'outbound' ? 'active' : ''}
+                onClick={() => setActiveTab('outbound')}>🛫 Outbound (від нас)</button>
         <button className={activeTab === 'matrix' ? 'active' : ''}
                 onClick={() => setActiveTab('matrix')}>📊 Matrix</button>
       </div>
       {activeTab === 'backhaul' && <BackhaulTab data={data} onSelect={handleSelect} />}
+      {activeTab === 'outbound' && <OutboundTab data={data} onSelect={handleSelect} />}
       {activeTab === 'matrix' && <MatrixTab data={data} />}
     </div>
   </>;
