@@ -229,7 +229,10 @@ function MapView({ data, selected, onSelect, mapRef }) {
   useEffect(() => {
     if (!mapDiv.current || mapRef.current) return;
     const map = L.map(mapDiv.current).setView([49.0, 28.0], 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // CARTO now requires an API key for its tile service. Key is restricted
+// to rostykk.github.io via Referer rules in the CARTO dashboard, so
+// embedding it here is acceptable: it cannot be re-used from another host.
+L.tileLayer('https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=cb1_59m3_1_29ddefc5c23ff42efb44e55c', {
       attribution: '© OpenStreetMap contributors © CARTO', maxZoom: 18,
     }).addTo(map);
     mapRef.current = map;
